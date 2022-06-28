@@ -1,1 +1,357 @@
 # Multilevel-regression-analysis-in-R
+
+```{r, include=FALSE, message=FALSE, warning=FALSE}
+library(magrittr)
+library(glmmTMB)
+library(sjstats)
+library(olsrr)
+library(sjPlot)
+library(haven)
+library(ggfortify)
+library(tidyverse)
+library(foreign)
+library(haven)
+library(stats)
+library(MASS)
+library(corrplot)
+library(base)
+library(dplyr)
+library(car)
+library(corrplot)
+library(polycor)
+library(corrgram)
+library(scales)
+library(Matrix)
+library(lme4)
+library(sjstats)
+library(standardize)
+library(insight)
+library(sjPlot)
+library(pscl)
+library(Amelia)
+library(mlbench)
+library(broom)
+library(margins)
+library(generalhoslem)
+library(OOmisc)
+library(nnet)
+library(pscl)
+library(stargazer)
+library(effects)
+library(texreg)
+```
+
+```{r, include=FALSE, message=FALSE, warning=FALSE}
+load('imm23.RData')
+```
+
+***Previously on class of multilevel regression analysis:***
+
+```{r, include=FALSE}
+m0 = lmer (MATH ~ 1|SCHID , data = data)
+summary(m0)
+```
+
+We conducted a null model to look how the intercept of math test results differs across schools -> to understand if we need a hierarchical linear model in this case. **So what we have here?**
+
+*Fixed effects: effects that are the same for all groups (in our case - for all schools)*
+
+50.759 - grand mean of math (the average math score) for all schools.
+
+*Random effects: effects that differ for all schools*
+
+SCHID intercept variance and standard deviation are parameters of those part that differs. Each school has its own error term that distinguish one school from another. Random intercept model in this case means that the intercept (math results) varies by school. *Variance* in this case allows us to estimate intraclass correlation coefficient (to understand how strongly observations in groups are similar - the bigger the bigger number of observations depends on group they attend).
+
+**How to find ICC?**
+
+ICC = 26.12/(26.12+81.24) = 0.24 - huge! 24% of the whole variance depends of school. The quarter of student's result depends of school that student attends
+
+**Another way to calculate ICC that shows the same result - 24%**
+
+```{r, warning=FALSE}
+sjstats::icc(m0)
+```
+
+**So we made a conclusion: we need to use HLM here**
+
+***Let`s move on to the lab***
+
+***Vary the effect of parents' education among the schools. Check if the random slope model is better***
+
+```{r}
+hist(data$PARENTED)
+```
+
+We can assume this variable as numeric one: the bigger number, the higher education.
+
+Here we need to conduct 1) random intercept and 2) random intercept and slope model. Moreover, I am interested in conducting model with 1) only parental education as independent variable and math test results as dependent variable (and school ID, of course) and 2) those variables + control variables (sex, SES and race). 
+
+**1. Random intercept model**
+
+In this model we assume that initial value of math test score differs across schools.
+
+*1.1. Random intercept model on math with parental education only*
+
+```{r}
+m1 <- lmer (MATH~PARENTED+ (1|SCHID) , data = data)
+screenreg (m1)
+```
+
+Parental education is significant here: 
+
+  *On average*, with the increase of parental education on 1 unit, the math test score is increased on 2.76.
+
+Here we have 23 schools and 519 pupils there. 13.41 - variance of 'ethas'- error term "that discerns the intercept in group j from the grand mean" (presentation) - for intercept. 
+
+*1.2. Random intercept model on math with parental education and control variables*
+
+```{r}
+m1.1 <- lmer (MATH~PARENTED+SEX+WHITE+SES+(1|SCHID) , data = data)
+screenreg (m1.1)
+```
+
+In this model parental education and race are significant:
+
+  *On average*, with the increase of parental education on 1 unit, the math test score is increased on 2.16.
+  
+   *On average*, for white pupils the math test score is bigger than for non-white pupils.
+   
+Variance of error term is smaller in this case than in previous model because tha number of variables is increased. 
+   
+*Let`s compare 1)model with parental education and 2) model with parental education&control variables*
+
+```{r, warning=FALSE, message=FALSE}
+anova (m1,m1.1)
+```
+
+According to AIC, loglikelihood and deviance (BIC is really sensitive parameter) we can say that model with control variables and main predictor is better than model without control variables. Moreover, according to ANOVA, the second model is significantly better than the first one. For further work we will use model with control variables and parental education. 
+
+**2. Random intercept and random slope model**
+
+Let`s assume that parental education influence on math test score differently across schools.
+
+*2.1. Random intercept and random slope model on math with parental education only*
+
+```{r}
+m2 <- lmer (MATH~PARENTED+(1+PARENTED|SCHID) , data = data)
+screenreg (m2)
+```
+
+In this model parental education and race are significant:
+
+  *On average*, with the increase of parental education on 1 unit, the math test score is increased on 2.90.
+
+*Speaking about coefficients in lower part of output:*
+
+48.58 - variance of error terms for intercept.
+
+1.29 - variance of error terms for coefficient for 'PARENTED' variable.
+
+-6.95 - covariance between intercept and parental education (the higher the intercept, the lower *b* coefficient for parental education).
+
+71.50 - variance across pupils.
+
+*2.2. Random intercept and random slope model on math with parental education and control variables*
+
+```{r}
+m2.1 <- lmer (MATH~PARENTED+SEX+WHITE+SES+(1+PARENTED|SCHID) , data = data)
+screenreg (m2.1)
+```
+
+*Let`s interpret significant coefficients*
+
+  *On average*, with the increase of parental education on 1 unit, the math test score is increased on 2.49.
+  
+  *On average*, for white pupils the math test score is bigger than for non-white pupils.
+  
+All the variance are decreased a little bit, covariance between the intercept and parental education if still negative. 
+
+*Let`s compare 1) model with parental education and 2) model with parental education & control variables*
+
+```{r, warning=FALSE, message=FALSE}
+anova (m2,m2.1)
+```
+
+Again, according to AIC, loglikelihood and deviance, the second model is better. Moreover, according to ANOVA, we should use model with parental education and control variables. 
+
+**Let`s compare model random intercept and random intercept&slope**
+
+```{r, warning=FALSE, message=FALSE}
+anova (m1.1,m2.1)
+```
+
+According to AIC, loglikelihood and deviance, second model is slightly better. According to ANOVA, the second model with random intercept and slope is *slightly* (not really high level of significance) better. **According to the second model, we assume that the effect of parental education on math test score differs across schools: in some schools parental education matters in terms of math test score, in other schools parental education does not matter.**
+
+Let`s use a model with random intercept and slope further. 
+
+***Check if the type of school affects the results in math***
+
+Let`s add variable 'PUBLIC' about type of school into a model with random slope and intercept. 
+
+*Model with parental education and type of school only*
+
+```{r}
+m3 <- lmer (MATH~PARENTED+PUBLIC+(1+PARENTED|SCHID) , data = data)
+screenreg (m3)
+```
+
+*Speaking about significant coefficients:*
+
+  *On average*, with the increase of parental education on 1 unit, the math test score is increased on 2.86.
+  
+Math test score does not dependent on type of school. 
+
+*Model with parental education, type of school and control variables*
+
+```{r}
+m3.1 <- lmer (MATH~PARENTED+SEX+WHITE+SES+PUBLIC+(1+PARENTED|SCHID) , data = data)
+screenreg (m3.1)
+```
+
+*Let`s interpret significant coefficients*
+
+  *On average*, with the increase of parental education on 1 unit, the math test score is increased on 2.46.
+  
+  *On average*, for white pupils the math test score is bigger than for non-white pupils.
+  
+*Let's again compare models*
+
+```{r, warning=FALSE, message=FALSE}
+anova(m3, m3.1)
+```
+
+And again, the model with parental education, type of school and control variables is significantly better. 
+
+***Check if the effect of parental education differs depending on the school type***
+
+We need to create an interaction effect for this purpose. We assume that parental education affects math test score differently across school type. 
+
+*Model with parental education, type of school and its interaction*
+
+```{r}
+m4 <- lmer (MATH~PARENTED*PUBLIC + (1+PARENTED|SCHID), data = data)
+screenreg (m4)
+```
+
+WOW! All coefficients are significant! Let's interpret it:
+
+  With the increase of parental education on 1 unit, the math test score is increased on 1.71.
+  
+  For pupils in public schools the math test score is lower than for pupils in private schools.
+  
+  The second-level predictor is a moderator. Parental education affects on math test score differently depends on type of school (it can be better to conduct good interpretation from visualization). 
+  
+*Model with parental education, type of school, its interaction and control variables*
+
+```{r}
+m4.1 <- lmer (MATH~PARENTED*PUBLIC+SEX+WHITE+SES+ (1+PARENTED|SCHID), data = data)
+screenreg (m4.1)
+```
+
+Look how the significance is changed! The interaction effect is not significant here! What is significant?
+
+  With the increase of parental education on 1 unit, the math test score is increased on 1.56.
+  
+  For white pupils the math test score is bigger than for non-white pupils.
+
+*Let`s compare these two models*
+
+```{r, warning=FALSE}
+anova(m4, m4.1)
+```
+
+Looks really interesting! The second model is significantly better than first model.
+
+***Indicate which school has the lowest impact of parents’ education***
+
+```{r}
+ranef(m4.1)
+```
+
+As example: The beta-coefficient for variable about parental education in school 72991 is 1.56 (β from model with parental education, type of school, its interaction effect and control variables) + (-0.345) = 1.215. **In this school parental education affects math test score less than average.** What do we need to do here is to find the school with **the lowest impact of parental education**
+
+In this case it is school with ID = **62821**. The beta-coefficient for variable about parental education in school 62821. is 1.56 + (-1.58) = -0.02 - the lowest coefficient among other schools.
+
+***Plot the effects of your final model***
+
+*At the beginning, let's conduct one more comparison: model without interaction effect and with interaction effect*
+
+```{r, message=FALSE}
+anova(m3.1, m4.1)
+```
+
+Okay, so what do we have here: according to AIC, loglikelihood and deviance, model with interaction effect is better. According to ANOVA, the second model is *slightly* better.
+
+*Let's visualize the most recent model*
+
+**Fixed effect**
+
+```{r}
+plot_model (m4.1 , type = 'est')
+```
+
+If confidential intervals cross the 'zero' line, the coefficient is not significant. Here we can see that confidential intervals for race and parental education do not cross the 'zero' line, and these 2 coefficients are significant (as we saw in model output). 
+
+**Random effect**
+
+```{r}
+plot_model(m4.1 , type = 're', sort.est = 'PARENTED')
+```
+
+The left graph shows error terms for parental education. We can see that, as we saw it previously, the school with ID=62821 has the lowest impact of parental education on math test score, and the school with ID=54344 has the highest impact 
+
+The right graph shows error terms for intercept. Interestingly, the school with ID=62821 has the highest initial value of math test score (and, maybe, that`s why it has the lowest impact of parental education, because pupils just are good in math) and the school with ID=54344 has the lowest initial value of math test score. 
+
+***Plot the interaction term and comment on the results***
+
+*Let`s do it for the model where it was significant - those without control variables*
+
+```{r}
+plot_model(m4, type="pred", terms = c("PUBLIC", "PARENTED[1,6]"))
+```
+
+Really interesting results!
+
+Pupils *in private school* who have parents with *low level of education* do their math test *better* than those pupils *in public school* and with *low-educated parents*. 
+
+Pupils *in private school* with *highly-educated parents* do their math test *worse* than those pupils *in public school* with *highly-educated parents*. 
+
+The level of parental education is really important for pupils in public school than private ones.
+
+*Now let`s have a look on visualization of interaction effect from the last model*
+
+```{r}
+plot_model(m4.1, type="pred", terms = c("PUBLIC", "PARENTED[1,6]"))
+```
+
+Results are not so clear in comparison to the previous graph + really huge CI. 
+
+***Calculate R2***
+
+*Let's calculate it for 1) model without interaction effect*
+
+```{r, message = FALSE, warning=FALSE}
+r2(m3.1)
+```
+
+Conditional R2 shows the overall variance that model explained by both fixed and random effect. Marginal R2 shows only variance explained by fixed effect (upper part of regression summary).
+
+Here we have that the biggest part of variance is explained by fixed effect (22 from 35) and the smallest part (35-22) is explained by random effect. 
+
+*Let's calculate it for 2) model with interaction effect and without control variables*
+
+```{r, message = FALSE, warning=FALSE}
+r2(m4)
+```
+
+The biggest part (but not really bigger) of variance is explained by fixed effect (18 from 34) and the smallest part (34-18=16, near to 18) is explained by random effect.
+
+*Let's calculate it for 3) model with interaction effect and with control variables*
+
+```{r, message = FALSE, warning=FALSE}
+r2(m4.1)
+```
+
+The biggest part of variance is explained by fixed effect (22 from 35) and the smallest part (35-22) is explained by random effect.
+
+*Overall, results of model fit test are almost the same for all models. All 3 model explained almost the equal part of variance, in all cases the biggest art is explained by fixed effect*
