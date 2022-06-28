@@ -1,6 +1,6 @@
 ---
-title: "lab7_0503_Petrova"
-author: "Petrova Anastasiia"
+title: "work"
+author: "srvve"
 date: "05 03 2021"
 output: html_document
 ---
